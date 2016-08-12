@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>ug2fsat frame converter</title>
+</head>
+<body>
+
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.0.5/handlebars.min.js"></script>
+
+<div class="container">
+	<div class="page-header">
+    	<h1>ug2fsat frame converter</h1>
+    </div>
+    <br/>
+    <input type="file" id="button_file" name="files[]" multiple />
+    <br/>
+	<div class="bg-info">
+    	<div id="drop_file">ou solte o arquivo aqui</div>    	
+	</div>
+    <br/>
+    <div id="output"></div>
+</div>
+
+<script id="frame-template" type="x-handlebars-template">
+  <div id="accordion" role="tablist" aria-multiselectable="true">
+  {{#each ugFrames}}
+    <div role="tab" id="heading{{frame_index}}">
+      <h4 class="panel-title">
+        <a role="button" data-toggle="collapse" data-parent="#accordion" href="#collapse{{frame_index}}" aria-expanded="false" aria-controls="collapse{{frame_index}}">
+          Frame [{{frame_index}}]
+        </a>
+      </h4>
+    </div>
+    <div id="collapse{{frame_index}}" class="collapse" role="tabpanel" aria-labelledby="heading{{frame_index}}">
+      <div class="well">
+        <small>(valores em hex)</small><br/>
+        Sysclock S H = {{sysclockSH}} <br/>
+        Sysclock S L = {{sysclockSL}} <br/>
+        Sysclock MS H = {{sysclockMSH}} <br/>
+        Sysclock MS L = {{sysclockMSL}} <br/>
+        Internal Temperature H = {{InternalTemperatureH}} <br/>
+        Internal Temperature L = {{InternalTemperatureL}} <br/>
+        Status Code = {{StatusCode}} <br/>
+        Acc X H = {{AccXH}} <br/>
+        Temperature H = {{TemperatureH}} <br/>
+        Temperature L = {{TemperatureL}} <br/>
+      </div>
+    </div>
+  {{/each}}
+  </div>
+</script>
+  
+<style>
+.bg-info {
+  padding: 5px;
+}
+ #drop_file {
+ 	padding: 50px 25px;
+    border: 2px dashed #5ba8de;
+    line-height: 0;
+    text-align: center;
+ }
+
+</style>
+
+<script>
+
+	function ug2fsat(data){
+        console.groupCollapsed('ug2fsat (debug)')
+        
+    	if(data.length == 0) {
+        	//dados para testes
+        	data = "8092539,1537,16517363,393117,28678,16777042,4607,13697024,0,849,216577,145232,1040640,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573"
+		}
+        
+          var lines = data.split(/\r?\n/)
+          
+          var ugFrames = new Array(lines.length)
+          
+          lines.forEach(function(line, row){
+          		tokens = line.split(',')
+                
+                ugFrames[row] = new Array(tokens.length)
+                
+                console.debug(tokens)
+                
+                tokens.forEach(function(token, col){
+                
+                	var token_byte1 = token &0xFF0000
+                    	, token_byte2 = token &0x00FF00
+                    	, token_byte3 = token &0x0000FF
+                        , coli = col*3;
+                        
+                    ugFrames[row][(coli)]=((token_byte1) >>> 0).toString(16)
+                    ugFrames[row][(coli+1)]=((token_byte2) >>> 0).toString(16)
+                    ugFrames[row][(coli+2)]=((token_byte3) >>> 0).toString(16)
+                    
+                	/*console.debug(token, ' > ugFrame['+(coli)+'] = ', ugFrames[row][(coli)],
+                    				' | ugFrame['+(coli+1)+'] = ', ugFrames[row][(coli+1)],
+                                    ' | ugFrame['+(coli+2)+'] = ', ugFrames[row][(coli+2)])
+                    */
+                }) // token
+                   
+          }) // line
+          
+          console.groupEnd()
+          
+          return ugFrames         
+    }
+
+  function handleFileSelect(evt) {
+    evt.stopPropagation();
+    evt.preventDefault();
+
+    var files = (evt.type == "drop") ? evt.dataTransfer.files : evt.target.files
+		, output = []
+        , file_index;
+    
+    for (var i = 0, f; f = files[i]; i++) {
+      file_index = i
+      
+      output.push('<div class="panel panel-info file-',i,'"><div class="panel-heading">', escape(f.name), ' <small>(', f.type || 'n/a', ') - ',
+                  f.size, ' bytes, modificado em: ',
+                  f.lastModifiedDate ? f.lastModifiedDate.toLocaleDateString() : 'n/a',
+                  '</small></div><div class="panel-body"></div></div>');
+                  
+      var reader = new FileReader()
+
+      // Closure to capture the file information.
+      reader.onload = (function(theFile) {
+        return function(e) {
+          var ugFrames = ug2fsat(e.target.result)
+          var ugFrames_obj = []
+          
+          $(ugFrames).each(function(frame_index, ugFrame){
+              ugFrames_obj.push({
+                frame_index: frame_index,
+                sysclockSH: ugFrame[3],
+                sysclockSL: ugFrame[4],
+                sysclockMSH: ugFrame[5],
+                sysclockMSL: ugFrame[6],                
+                InternalTemperatureH: ugFrame[7],
+                InternalTemperatureL: ugFrame[8],
+                StatusCode: ugFrame[9],
+                AccXH: ugFrame[10],
+                
+                TemperatureH: ugFrame[32],
+                TemperatureL: ugFrame[33],
+                
+              })
+          })
+          
+          var $frame_tmpl   = $("#frame-template").html()
+          var frame_render = Handlebars.compile($frame_tmpl)
+          $(".panel.file-"+file_index+" .panel-body").append(frame_render({ ugFrames: ugFrames_obj }))
+		  
+        }
+      })(f)
+
+      // Read in the image file as a data URL.
+      reader.readAsText(f)
+    }
+    $('#output').html(output.join(''))
+  }
+
+  function handleDragOver(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  var drop = document.getElementById('drop_file');
+  drop.addEventListener('dragover', handleDragOver, false);
+  drop.addEventListener('drop', handleFileSelect, false);
+  
+  document.getElementById('button_file').addEventListener('change', handleFileSelect, false);
+
+</script>
+
+  
+</body>
+</html>
