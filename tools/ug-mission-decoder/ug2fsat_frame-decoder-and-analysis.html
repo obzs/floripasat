@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>ug2fsat frame converter</title>
+  
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/handlebars.js/4.0.5/handlebars.min.js"></script>
+  <script src="https://code.highcharts.com/highcharts.js"></script>  
+  <script src="https://code.highcharts.com/modules/exporting.js"></script>
+</head>
+<body>
+  
+<div class="container">
+	<div class="page-header">
+    	<h1>ug2fsat frame converter</h1>
+    </div>
+    <br/>
+    <div id="input-handlers">
+      Select the parameter:
+      <select id="parameter" class="form-control">
+        <option>OBDH_temperature</option>
+        <option>OBDH_sysclock</option>
+        <option>IMU_acc_x</option>
+        <option>IMU_acc_y</option>
+        <option>IMU_acc_z</option>
+        <option>IMU_gyr_x</option>
+        <option>IMU_gyr_y</option>
+        <option>IMU_gyr_z</option>
+        <option>radio_counter1</option>
+        <option>radio_counter2</option>
+      </select>
+      <br/>
+      <input type="file" id="button_file" name="files[]" multiple />
+      <br/>
+	  <div class="bg-info">
+    	<div id="drop_file">ou solte o arquivo aqui</div>    	
+	  </div>
+    </div>
+    <div id="reload-info">
+    	<button class="btn btn-info" onClick="window.location.reload()">load another file</button>    	
+    </div>
+    <br/>
+    <div id="chart" class="xs-col-12"></div>
+    <div id="output"></div>
+</div>
+
+<script id="frame-template" type="x-handlebars-template">
+  <div id="accordion" role="tablist" aria-multiselectable="true">
+  {{#each ugFrames}}
+    <div role="tab" id="heading{{frame_index}}">
+      <h4 class="panel-title">
+        <a role="button" data-toggle="collapse" data-parent="#accordion" href="#collapse{{frame_index}}" aria-expanded="false" aria-controls="collapse{{frame_index}}">
+          Frame [{{frame_index}}]
+        </a>
+      </h4>
+    </div>
+    <div id="collapse{{frame_index}}" class="collapse" role="tabpanel" aria-labelledby="heading{{frame_index}}">
+      <div class="well">
+        <small>(valores em hex)</small><br/>
+        Sysclock S H = {{sysclockSH}} <br/>
+        Sysclock S L = {{sysclockSL}} <br/>
+        Sysclock MS H = {{sysclockMSH}} <br/>
+        Sysclock MS L = {{sysclockMSL}} <br/>
+        Internal Temperature H = {{InternalTemperatureH}} <br/>
+        Internal Temperature L = {{InternalTemperatureL}} <br/>
+        Status Code = {{StatusCode}} <br/>
+        Acc X H = {{AccXH}} <br/>
+        Temperature H = {{TemperatureH}} <br/>
+        Temperature L = {{TemperatureL}} <br/>
+      </div>
+    </div>
+  {{/each}}
+  </div>
+</script>
+  
+<style>
+.bg-info {
+  padding: 5px;
+}
+  #reload-info {
+    display:none;
+    text-align: center;
+  }
+ #drop_file {
+ 	padding: 50px 25px;
+    border: 2px dashed #5ba8de;
+    line-height: 0;
+    text-align: center;
+ }
+
+</style>
+
+<script>
+
+
+
+  //var window.uGravity;
+  var uGravity = window.uGravity = {
+        ugFrames: [],
+        rawData: "",
+        loadChart: function(){}, //Declared down below
+        processData: function(parameter){
+            parameter = parameter || $('#parameter').val()
+            ug2fsat()
+            ugFramesSetChartData()
+            loadChart(uGravity.chartData[parameter])
+        },
+        chartData: {
+          frame_index: [],
+          OBDH_status: [],
+          OBDH_temperature: [],
+          OBDH_sysclock: [],
+          IMU_acc_x: [],
+          IMU_acc_y: [],
+          IMU_acc_z: [],
+          IMU_gyr_x: [],
+          IMU_gyr_y: [],
+          IMU_gyr_z: [],
+          radio_counter1: [],
+          radio_counter2: [],
+         },
+        IMU_ACC_RANGE: 16.0,
+        IMU_GYR_RANGE: 2.0,
+
+        sampleData: "8092539,1537,16517363,393117,28678,16777042,4607,13697024,0,849,216577,145232,1040640,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,1794,1050867,393097,28679,130886,16773375,13172736,0,849,216577,145232,1019136,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573\n8092539,2050,2230515,393100,26630,15597370,4095,14614528,255,1639249,216577,145231,985600,8194573",
+
+        test_sample_data: function(parameter){
+            this.rawData =  this.sampleData
+            this.processData(parameter)
+            console.log(uGravity.chartData)
+        },
+
+  }
+
+  uGravity.test_sample_data('IMU_gyr_x')
+  uGravity.test_sample_data('OBDH_sysclock') 
+  
+	function ug2fsat(data){
+        console.groupCollapsed('ug2fsat (debug)')
+        
+    	if(typeof data === "undefined" || data.length == 0) {
+        	//dados para testes
+        	data = uGravity.rawData
+		}
+        
+          var lines = data.split(/\r?\n/)
+          
+          uGravity.ugFrames = new Array(lines.length)
+          
+          lines.forEach(function(line, row){
+          		tokens = line.split(',')
+                
+                uGravity.ugFrames[row] = new Array(tokens.length)
+                
+                console.debug(tokens)
+                
+                tokens.forEach(function(token, col){
+                
+                	var token_byte1 = token &0xFF0000
+                    	, token_byte2 = token &0x00FF00
+                    	, token_byte3 = token &0x0000FF
+                        , coli = col*3;
+                        
+                    uGravity.ugFrames[row][(coli)]=((token_byte1) >>> 0).toString(16)
+                    uGravity.ugFrames[row][(coli+1)]=((token_byte2) >>> 0).toString(16)
+                    uGravity.ugFrames[row][(coli+2)]=((token_byte3) >>> 0).toString(16)
+                    
+                	/*console.debug(token, ' > ugFrame['+(coli)+'] = ', uGravity.ugFrames[row][(coli)],
+                    				' | ugFrame['+(coli+1)+'] = ', uGravity.ugFrames[row][(coli+1)],
+                                    ' | ugFrame['+(coli+2)+'] = ', uGravity.ugFrames[row][(coli+2)])
+                    */
+                }) // token
+                   
+          }) // line
+          
+          console.groupEnd()
+          
+          return uGravity.ugFrames;        
+    }
+      
+  function ugFramesSetChartData(){
+        
+    var ugFrames = uGravity.ugFrames
+        , OBDH_status = uGravity.chartData.OBDH_status
+        , OBDH_temperature = uGravity.chartData.OBDH_temperature
+        , OBDH_sysclock = uGravity.chartData.OBDH_sysclock
+        , IMU_acc_x = uGravity.chartData.IMU_acc_x
+        , IMU_acc_y = uGravity.chartData.IMU_acc_y
+        , IMU_acc_z = uGravity.chartData.IMU_acc_z
+        , IMU_gyr_x = uGravity.chartData.IMU_gyr_x
+        , IMU_gyr_y = uGravity.chartData.IMU_gyr_y
+        , IMU_gyr_z = uGravity.chartData.IMU_gyr_z
+        , IMU_ACC_RANGE = uGravity.IMU_ACC_RANGE
+        , IMU_GYR_RANGE = uGravity.IMU_GYR_RANGE
+        , radio_counter1 = uGravity.chartData.radio_counter1
+        , radio_counter2 = uGravity.chartData.radio_counter2;
+    
+    $(ugFrames).each(function(frame_index, ugFrame){
+            
+      var obdh_sysclock_S_H = ugFrame[3]
+        , obdh_sysclock_S_L = ugFrame[4]
+        , obdh_sysclock_MS_H = ugFrame[5]
+        , obdh_sysclock_MS_L = ugFrame[6]
+        , obdh_internal_temperature_H = ugFrame[7]
+        , obdh_internal_temperature_L = ugFrame[8]
+        , obdh_status = ugFrame[9]
+        , imu_acc_x_H = ugFrame[10]
+        , imu_acc_x_L = ugFrame[11]
+        , imu_acc_y_H = ugFrame[12]
+        , imu_acc_y_L = ugFrame[13]
+        , imu_acc_z_H = ugFrame[14]
+        , imu_acc_z_L = ugFrame[15]
+        , imu_gyr_x_H = ugFrame[16]
+        , imu_gyr_x_L = ugFrame[17]
+        , imu_gyr_y_H = ugFrame[18]
+        , imu_gyr_y_L = ugFrame[19]
+        , imu_gyr_z_H = ugFrame[20]
+        , imu_gyr_z_L = ugFrame[21]
+        , radio_counter1_H = ugFrame[22]
+        , radio_counter1_L = ugFrame[23]
+        , radio_counter2_H = ugFrame[24]
+        , radio_counter2_L = ugFrame[25];
+      
+      
+      uGravity.chartData.frame_index.push(frame_index)
+      
+      //OBDH      
+      OBDH_sysclock.push([frame_index, parseFloat( (ugFrame[3] << 8 + ugFrame[4]) + 1.0/(ugFrame[5]<<8 + ugFrame[6]) ) ])
+      OBDH_temperature.push([frame_index, parseFloat( ugFrame[7] << 8 + ugFrame[8] ) ])
+      OBDH_status.push([frame_index, ugFrame[9] ])
+      
+      // Filtering noise
+      if(OBDH_sysclock[OBDH_sysclock.length-1][1] === Infinity){
+          OBDH_sysclock.pop()
+      }
+      if(OBDH_temperature[OBDH_temperature.length-1][1] === Infinity){
+          OBDH_temperature.pop()
+      }
+      
+      //IMU
+      //console.log(imu_acc_x_H,imu_acc_x_L,IMU_ACC_RANGE)
+      IMU_acc_x.push([frame_index, parseFloat( (((imu_acc_x_H << 8 | imu_acc_x_L) * IMU_ACC_RANGE) / 32768.0) ) ])
+      IMU_acc_y.push([frame_index, parseFloat( (((imu_acc_y_H << 8 | imu_acc_y_L) * IMU_ACC_RANGE) / 32768.0) ) ])
+      IMU_acc_z.push([frame_index, parseFloat( (((imu_acc_z_H << 8 | imu_acc_z_L) * IMU_ACC_RANGE) / 32768.0) ) ])
+      IMU_gyr_x.push([frame_index, parseFloat( (((imu_gyr_x_H << 8 | imu_gyr_x_L) * IMU_GYR_RANGE) / 32768.0) ) ])
+      IMU_gyr_y.push([frame_index, parseFloat( (((imu_gyr_y_H << 8 | imu_gyr_y_L) * IMU_GYR_RANGE) / 32768.0) ) ])
+      IMU_gyr_z.push([frame_index, parseFloat( (((imu_gyr_z_H << 8 | imu_gyr_z_L) * IMU_GYR_RANGE) / 32768.0) ) ])
+      
+      
+      if(IMU_acc_x[IMU_acc_x.length-1][1] === Infinity){
+        console.log(IMU_acc_x[IMU_acc_x.length-1][1])
+          IMU_acc_x.pop()
+      }
+      
+      //RADIO
+      radio_counter1.push([frame_index, ((radio_counter1_H << 8)  + radio_counter1_L) ])
+      radio_counter2.push([frame_index, ((radio_counter2_H << 8)  + radio_counter2_L) ])
+      
+    })
+    
+  }
+  
+  
+  
+  /*********
+  * Chart
+  */ 
+  
+function loadChart2(data){
+      $('#chart').highcharts({
+          title: {
+              text: 'uGravity Mission',
+              x: -20 //center
+          },
+          subtitle: {
+              text: 'data from the mission',
+              x: -20
+          },
+          xAxis: {
+              title: {
+                text: 'dataframe number'
+              }
+          },
+          yAxis: {
+              title: {
+                  text: 'data'
+              },
+              plotLines: [{
+                  value: 0,
+                  width: 1,
+                  color: '#808080'
+              }]
+          },
+          tooltip: {
+              valueSuffix: ''
+          },
+          legend: {
+              layout: 'vertical',
+              align: 'right',
+              verticalAlign: 'middle',
+              borderWidth: 0
+          },
+          series: [{
+                    name: 'OBDH_sysclock',
+                    data: uGravity.chartData.OBDH_sysclock
+                }, // {
+                //   name: 'OBDH_temperature',
+                //   data: uGravity.chartData.OBDH_temperature
+                //}
+          ],
+
+          chart: {
+                events: {                            
+                    load: function () {
+                        $(this.renderTo).closest("[id^='chart-']").height(this.chartHeight)
+                    },                            
+                    redraw: function () {
+                        $(this.renderTo).closest("[id^='chart-']").height(this.chartHeight)
+                    },
+                }
+          },
+      });
+}
+
+
+    function loadChart (data){
+        var detailChart;
+
+        $(document).ready(function () {
+
+            // create the detail chart
+            function createDetail(masterChart, chartID) {
+
+                // prepare the detail chart
+                var detailData = [],
+                    detailStart = data[0][0];
+
+                $.each(masterChart.series[0].data, function () {
+                    if (this.x >= detailStart) {
+                        detailData.push(this.y);
+                    }
+                });
+
+                // create a detail chart referenced by a global variable
+                detailChart = $('#'+chartID+' #detail-container').highcharts({
+                    chart: {
+                        marginBottom: 120,
+                        reflow: false,
+                        marginLeft: 50,
+                        marginRight: 20,
+                        style: {
+                            position: 'absolute'
+                        },
+                        events: {                            
+                            load: function () {
+                                $(this.renderTo).closest("[id^='chart-']").height(this.chartHeight)
+                            },                            
+                            redraw: function () {
+                                $(this.renderTo).closest("[id^='chart-']").height(this.chartHeight)
+                            },
+                        }
+                    },
+                    credits: {
+                        enabled: false
+                    },
+                    title: {
+                        text: 'uG Mission'
+                    },
+                    subtitle: {
+                        text: 'data analysis'
+                    },
+                    xAxis: {
+                        //type: 'datetime'
+                    },
+                    yAxis: {
+                        title: {
+                            text: null
+                        },
+                        maxZoom: 0.1
+                    },
+                    tooltip: {
+                        formatter: function () {
+                            var point = this.points[0];
+                            return '<b>' + point.series.name + '</b><br/>frame number: ' + this.x + '<br/>' +
+                                'value: ' + point.y;
+                        },
+                        shared: true
+                    },
+                    legend: {
+                        enabled: false
+                    },
+                    plotOptions: {
+                        series: {
+                            marker: {
+                                enabled: false,
+                                states: {
+                                    hover: {
+                                        enabled: true,
+                                        radius: 3
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    series: [{
+                        name: 'Data',
+                        pointStart: detailStart,
+                        pointInterval: 1,
+                        data: detailData
+                    }],
+
+                    exporting: {
+                        enabled: false
+                    }
+
+                }).highcharts(); // return chart
+            }
+
+            // create the master chart
+            function createMaster(chartID) {
+                $('#'+chartID+' #master-container').highcharts({
+                    chart: {
+                        reflow: false,
+                        borderWidth: 0,
+                        backgroundColor: null,
+                        marginLeft: 50,
+                        marginRight: 20,
+                        zoomType: 'x',
+                        events: {
+                            // listen to the selection event on the master chart to update the
+                            // extremes of the detail chart
+                            selection: function (event) {
+                                var extremesObject = event.xAxis[0],
+                                    min = extremesObject.min,
+                                    max = extremesObject.max,
+                                    detailData = [],
+                                    xAxis = this.xAxis[0];
+
+                                // reverse engineer the last part of the data
+                                $.each(this.series[0].data, function () {
+                                    if (this.x > min && this.x < max) {
+                                        detailData.push([this.x, this.y]);
+                                    }
+                                });
+
+                                // move the plot bands to reflect the new detail span
+                                xAxis.removePlotBand('mask-before');
+                                xAxis.addPlotBand({
+                                    id: 'mask-before',
+                                    from: data[0][0],
+                                    to: min,
+                                    color: 'rgba(0, 0, 0, 0.2)'
+                                });
+
+                                xAxis.removePlotBand('mask-after');
+                                xAxis.addPlotBand({
+                                    id: 'mask-after',
+                                    from: max,
+                                    to: data[data.length - 1][0],
+                                    color: 'rgba(0, 0, 0, 0.2)'
+                                });
+
+
+                                detailChart.series[0].setData(detailData);
+
+                                return false;
+                            }
+                        }
+                    },
+                    title: {
+                        text: null
+                    },
+                    xAxis: {
+                        //type: 'datetime',
+                        showLastTickLabel: true,
+                        maxZoom: 1, // fourteen days
+                        plotBands: [{
+                            id: 'mask-before',
+                            from: data[0][0],
+                            to: data[data.length - 1][0],
+                            color: 'rgba(0, 0, 0, 0.2)'
+                        }],
+                        title: {
+                            text: null
+                        }
+                    },
+                    yAxis: {
+                        gridLineWidth: 0,
+                        labels: {
+                            enabled: false
+                        },
+                        title: {
+                            text: null
+                        },
+                        min: 0.6,
+                        showFirstLabel: false
+                    },
+                    tooltip: {
+                        formatter: function () {
+                            return false;
+                        }
+                    },
+                    legend: {
+                        enabled: false
+                    },
+                    credits: {
+                        enabled: false
+                    },
+                    plotOptions: {
+                        series: {
+                            fillColor: {
+                                linearGradient: [0, 0, 0, 70],
+                                stops: [
+                                    [0, Highcharts.getOptions().colors[0]],
+                                    [1, 'rgba(255,255,255,0)']
+                                ]
+                            },
+                            lineWidth: 1,
+                            marker: {
+                                enabled: false
+                            },
+                            shadow: false,
+                            states: {
+                                hover: {
+                                    lineWidth: 1
+                                }
+                            },
+                            enableMouseTracking: false
+                        }
+                    },
+
+                    series: [{
+                        type: 'area',
+                        name: 'data',
+                        pointInterval: 1,
+                        pointStart: data[0][0],
+                        data: data
+                    }],
+
+                    exporting: {
+                        enabled: false
+                    }
+
+                }, function (masterChart) {
+                    createDetail(masterChart, uGravity.lastChartID);
+                })
+                    .highcharts(); // return chart instance
+            }
+
+            // make the container smaller and add a second container for the master chart
+          
+            uGravity.lastChartID = 'chart-'+(new Date().getTime());
+          
+            $('#chart').append('<div id="'+uGravity.lastChartID+'"></div>')
+          
+            var $container = $('#'+uGravity.lastChartID)
+                .css('position', 'relative');
+
+            $('<div id="detail-container">')
+                .appendTo($container);
+
+            $('<div id="master-container">')  .css({
+                    position: 'absolute',
+                    top: 300,
+                    height: 100,
+                    width: '100%'
+                })           
+                    .appendTo($container);
+
+            // create master and in its callback, create the detail chart
+            createMaster(uGravity.lastChartID);
+        });
+    }
+
+  
+  /*********
+  * File upload handling functions
+  */
+  
+  function handleFileSelect(evt) {
+    evt.stopPropagation();
+    evt.preventDefault();
+
+    var files = (evt.type == "drop") ? evt.dataTransfer.files : evt.target.files
+		, output = []
+        , file_index;
+    
+    for (var i = 0, f; f = files[i]; i++) {
+      file_index = i
+      
+      output.push('<div class="panel panel-info file-',i,'"><div class="panel-heading">', escape(f.name), ' <small>(', f.type || 'n/a', ') - ',
+                  f.size, ' bytes, modificado em: ',
+                  f.lastModifiedDate ? f.lastModifiedDate.toLocaleDateString() : 'n/a',
+                  '</small></div><div class="panel-body"></div></div>');
+                  
+      var reader = new FileReader()
+
+      // Closure to capture the file information.
+      reader.onload = (function(theFile) {
+        return function(e) {
+          uGravity.rawData = e.target.result
+          
+          uGravity.processData()
+          
+          $('#input-handlers').hide()
+          $('#reload-info').show()
+          
+          var ugFrames_template_obj = []
+          
+          $(uGravity.ugFrames).each(function(frame_index, ugFrame){
+              ugFrames_template_obj.push({
+                frame_index: frame_index,
+                sysclockSH: ugFrame[3],
+                sysclockSL: ugFrame[4],
+                sysclockMSH: ugFrame[5],
+                sysclockMSL: ugFrame[6],                
+                InternalTemperatureH: ugFrame[7],
+                InternalTemperatureL: ugFrame[8],
+                StatusCode: ugFrame[9],
+                AccXH: ugFrame[10],
+                
+                TemperatureH: ugFrame[32],
+                TemperatureL: ugFrame[33],
+                
+              })
+          })
+          
+          //var $frame_tmpl   = $("#frame-template").html()
+          //var frame_render = Handlebars.compile($frame_tmpl)
+          //$(".panel.file-"+file_index+" .panel-body").append(frame_render({ ugFrames: ugFrames_template_obj }))
+		  
+        }
+      })(f)
+
+      // Read in the image file as a data URL.
+      reader.readAsText(f)
+    }
+    $('#output').html(output.join(''))
+  }
+
+  function handleDragOver(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }
+
+  var drop = document.getElementById('drop_file');
+  drop.addEventListener('dragover', handleDragOver, false);
+  drop.addEventListener('drop', handleFileSelect, false);
+  
+  document.getElementById('button_file').addEventListener('change', handleFileSelect, false);
+
+    
+
+</script>
+
+  
+</body>
+</html>
